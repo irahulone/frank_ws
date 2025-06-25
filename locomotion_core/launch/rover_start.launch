@@ -1,0 +1,4 @@
+<launch>
+<node name="frank_kin" pkg="locomotion_core" type="movebase_kinematics.py" />
+<node name="roboteq_driver" pkg="locomotion_core" type="roboteq_driver.py" />
+</launch>

@@ -1,0 +1,5 @@
+<launch>
+<node name="r2_enable" pkg="locomotion_core" type="enable.py" />
+<node name="r1_du2_ctrl" pkg="locomotion_core" type="command_du.py" />
+</launch>
+
