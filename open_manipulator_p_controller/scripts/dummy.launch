@@ -1,0 +1,15 @@
+<launch>
+  <param name="base_link" value="base_link" />
+  <param name="ee_link" value="gripper" />
+  <!-- If it's a .xacro -->
+  <param name="robot_description" command="$(find xacro)/xacro '$(find open_manipulator_p_gazebo)/urdf/open_manipulator_p.urdf.xacro'" />
+<!-- /home/open-arm/frank_combined_ws/src/open_manipulator_p_simulations/open_manipulator_p_gazebo/urdf/open_manipulator_p.urdf.xacro -->
+  <!-- Start your controller node -->
+  <node name="effort_to_base_controller" 
+    pkg="your_package" 
+    type="force2base.py" 
+    output="screen">
+    </node>
+</launch>
+
+
