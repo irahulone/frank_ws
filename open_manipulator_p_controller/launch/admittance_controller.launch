@@ -1,0 +1,12 @@
+
+<launch>
+  <arg name="usb_port"     default="/dev/ttyUSB0"/>
+  <arg name="baud_rate"    default="1000000"/>
+  <arg name="control_period"         default="0.010"/>
+  <arg name="use_platform"           default="true"/>
+  <arg name="with_gripper"           default="false"/>
+
+  <node name="admittance_controller" pkg="open_manipulator_p_controller" type="admittance_controller" output="screen" />
+
+
+</launch>
