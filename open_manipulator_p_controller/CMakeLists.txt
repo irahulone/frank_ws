@@ -63,6 +63,9 @@ include_directories(
 )
 
 add_executable(open_manipulator_p_controller src/open_manipulator_p_controller.cpp)
+add_executable(admittance_controller src/admittance_controller.cpp)
+target_link_libraries(admittance_controller ${catkin_LIBRARIES})
+
 add_dependencies(open_manipulator_p_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(open_manipulator_p_controller ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 
