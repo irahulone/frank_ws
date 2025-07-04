@@ -1,87 +1,102 @@
 #!/usr/bin/env python
-
-import rospy
-from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Twist
+import rospy
+from geometry_msgs.msg import WrenchStamped
 import numpy as np
 
-class EffortToBaseController:
+class TaskWrenchFilter:
     def __init__(self):
-        rospy.init_node("effort_to_base_controller")
+        rospy.init_node("task_wrench_filter")
 
         # Parameters
-        self.kx = rospy.get_param("~kx", 0.01)
-        self.ky = rospy.get_param("~ky", 0.01)
         self.alpha = rospy.get_param("~alpha", 0.1)
-        self.deadzone = rospy.get_param("~deadzone", 0.2)
-        self.max_speed = rospy.get_param("~max_speed", 0.2)
-        self.joint_names = rospy.get_param("~effort_joints", ["joint1", "joint2"])  # Assume planar 2D
+        self.force_deadzone = rospy.get_param("~force_deadzone", 1.0)     # in Newtons
+        self.torque_deadzone = rospy.get_param("~torque_deadzone", 0.1)  # in Nm
+        self.frame_id = rospy.get_param("~frame_id", "gripper")
 
         self.bias_set = False
-        self.bias = np.zeros(len(self.joint_names))
-        self.filtered_effort = np.zeros(len(self.joint_names))
+        self.bias_force = np.zeros(3)
+        self.bias_torque = np.zeros(3)
+        self.filtered_force = np.zeros(3)
+        self.filtered_torque = np.zeros(3)
+        self.idle_force_threshold = rospy.get_param("~idle_force_threshold", 5.0)  # N
+        self.reset_when_idle = rospy.get_param("~reset_when_idle", True)
+        self.was_idle = False  # Add in __init__
+        self.cmd_vel = Twist()  # To store last command
 
-        # Publisher to publish effort-only JointState
-        self.pub = rospy.Publisher('/open_manipulator_p/effort_only', JointState, queue_size=10)
+        # Publisher
+        self.pub = rospy.Publisher('/task_wrench_filtered', WrenchStamped, queue_size=10)
 
-        # self.cmd_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
-        rospy.Subscriber("/joint_states", JointState, self.joint_states_callback)
-        rospy.loginfo("Effort-to-base controller initialized. Waiting for bias calibration...")
+        # Subscriber
+        rospy.Subscriber("/task_wrench", WrenchStamped, self.wrench_callback)
+        rospy.Subscriber("/cmd_vel", Twist, self.cmd_vel_callback)
+        rospy.loginfo("Task Wrench Filter initialized. Waiting for first message to set bias...")
 
-    def joint_states_callback(self, msg):
-        # Get effort values for relevant joints
-        effort_dict = dict(zip(msg.name, msg.effort))
-        current_efforts = np.array([effort_dict.get(j, 0.0) for j in self.joint_names])
-        # current_efforts = msg.effort
+    def apply_deadzone(self, vector, threshold):
+        return np.where(np.abs(vector) < threshold, 0.0, vector)
+    
+    def cmd_vel_callback(self, msg):
+        self.cmd_vel = msg
 
+    def is_cmd_vel_idle(self, threshold=0.1):
+        lin = self.cmd_vel.linear
+        ang = self.cmd_vel.angular
+        return (abs(lin.x) < threshold and abs(lin.y) < threshold and abs(lin.z) < threshold and
+                abs(ang.x) < threshold and abs(ang.y) < threshold and abs(ang.z) < threshold)
+
+
+    def wrench_callback(self, msg):
+        force = np.array([msg.wrench.force.x, msg.wrench.force.y, msg.wrench.force.z])
+        torque = np.array([msg.wrench.torque.x, msg.wrench.torque.y, msg.wrench.torque.z])
 
         if not self.bias_set:
-            self.bias = current_efforts
+            self.bias_force = force
+            self.bias_torque = torque
             self.bias_set = True
-            rospy.loginfo("Effort bias set to: {}".format(self.bias))
+            rospy.loginfo("Wrench bias set.")
             return
 
-        # Remove gravity bias
-        effort_corrected = current_efforts - self.bias
+        # Remove bias
+        force_corrected = force - self.bias_force
+        torque_corrected = torque - self.bias_torque
 
-        # Low-pass filter
-        self.filtered_effort = self.alpha * effort_corrected + (1 - self.alpha) * self.filtered_effort
+        # Apply deadzone
+        force_corrected = self.apply_deadzone(force_corrected, self.force_deadzone)
+        torque_corrected = self.apply_deadzone(torque_corrected, self.torque_deadzone)
 
-        # Deadzone
-        # eff_x, eff_y = self.filtered_effort
-        # if abs(eff_x) < self.deadzone:
-        #     eff_x = 0.0
-        # if abs(eff_y) < self.deadzone:
-        #     eff_y = 0.0
+        # Apply low-pass filter
+        self.filtered_force = self.alpha * force_corrected + (1 - self.alpha) * self.filtered_force
+        self.filtered_torque = self.alpha * torque_corrected + (1 - self.alpha) * self.filtered_torque
 
-        # Create a new JointState message to publish only effort info
-        effort_msg = JointState()
-        
-        # Copy the header to keep timestamps etc.
-        effort_msg.header = msg.header
-        
-        # Copy the joint names
-        effort_msg.name = msg.name
-        
-        # We only care about effort, so set position and velocity to empty lists
-        effort_msg.position = []
-        effort_msg.velocity = []
-        
-        # Copy effort data
-        effort_msg.effort = self.filtered_effort
-
-        # Publish the effort message
-        self.pub.publish(effort_msg)
+        # Auto-reset filtered wrench if "idle"
+        is_wrench_idle = np.linalg.norm(self.filtered_force) < self.idle_force_threshold
+        is_base_idle = self.is_cmd_vel_idle()
 
 
-        # Map effort to velocity command
-        # cmd = Twist()
-        # cmd.linear.x = np.clip(self.kx * eff_x, -self.max_speed, self.max_speed)
-        # cmd.linear.y = np.clip(self.ky * eff_y, -self.max_speed, self.max_speed)
+        if self.reset_when_idle and is_wrench_idle and is_base_idle:
+            if not self.was_idle:
+                rospy.loginfo("Robot appears idle — resetting wrench.")
+                self.was_idle = True
+            self.filtered_force = np.zeros(3)
+            self.filtered_torque = np.zeros(3)
+        else:
+            self.was_idle = False
 
-        # self.cmd_pub.publish(cmd)
+        # Prepare message
+        filtered_msg = WrenchStamped()
+        filtered_msg.header = msg.header
+        filtered_msg.header.frame_id = self.frame_id
 
+        filtered_msg.wrench.force.x = self.filtered_force[0]
+        filtered_msg.wrench.force.y = self.filtered_force[1]
+        filtered_msg.wrench.force.z = self.filtered_force[2]
+
+        filtered_msg.wrench.torque.x = self.filtered_torque[0]
+        filtered_msg.wrench.torque.y = self.filtered_torque[1]
+        filtered_msg.wrench.torque.z = self.filtered_torque[2]
+
+        self.pub.publish(filtered_msg)
 
 if __name__ == "__main__":
-    EffortToBaseController()
+    TaskWrenchFilter()
     rospy.spin()
