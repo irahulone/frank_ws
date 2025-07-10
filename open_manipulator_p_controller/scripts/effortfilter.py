@@ -19,7 +19,7 @@ class TaskWrenchFilter:
         self.bias_torque = np.zeros(3)
         self.filtered_force = np.zeros(3)
         self.filtered_torque = np.zeros(3)
-        self.idle_force_threshold = rospy.get_param("~idle_force_threshold", 5.0)  # N
+        self.idle_force_threshold = rospy.get_param("~idle_force_threshold", 10.0)  # N
         self.reset_when_idle = rospy.get_param("~reset_when_idle", True)
         self.was_idle = False  # Add in __init__
         self.cmd_vel = Twist()  # To store last command
@@ -32,7 +32,8 @@ class TaskWrenchFilter:
         rospy.Subscriber("/cmd_vel", Twist, self.cmd_vel_callback)
         rospy.loginfo("Task Wrench Filter initialized. Waiting for first message to set bias...")
 
-    def apply_deadzone(self, vector, threshold):
+    def apply_deadzone(self, vector, bias_vector, scale=0.1):
+        threshold = scale * np.abs(bias_vector)
         return np.where(np.abs(vector) < threshold, 0.0, vector)
     
     def cmd_vel_callback(self, msg):
@@ -56,27 +57,39 @@ class TaskWrenchFilter:
             rospy.loginfo("Wrench bias set.")
             return
 
+
         # Remove bias
         force_corrected = force - self.bias_force
         torque_corrected = torque - self.bias_torque
 
         # Apply deadzone
-        force_corrected = self.apply_deadzone(force_corrected, self.force_deadzone)
-        torque_corrected = self.apply_deadzone(torque_corrected, self.torque_deadzone)
+        force_corrected = self.apply_deadzone(force_corrected, self.bias_force, 0.05)
+        torque_corrected = self.apply_deadzone(torque_corrected, self.bias_torque, 0.05)
+
+        self.filtered_force = force_corrected
+        self.filtered_torque = torque_corrected
 
         # Apply low-pass filter
         self.filtered_force = self.alpha * force_corrected + (1 - self.alpha) * self.filtered_force
         self.filtered_torque = self.alpha * torque_corrected + (1 - self.alpha) * self.filtered_torque
 
-        # Auto-reset filtered wrench if "idle"
-        is_wrench_idle = np.linalg.norm(self.filtered_force) < self.idle_force_threshold
+        # # Auto-reset filtered wrench if "idle"
+        # is_wrench_idle = np.linalg.norm(self.filtered_force) < self.idle_force_threshold
+        # is_wrench_idle = np.linalg.norm(self.filtered_force) < 0.01*np.linalg.norm(force)
+
         is_base_idle = self.is_cmd_vel_idle()
+        rospy.loginfo("arm force: %f", np.linalg.norm(self.filtered_force))
+        rospy.loginfo("arm force not threshold: %f",0.1*np.linalg.norm(force))
 
 
-        if self.reset_when_idle and is_wrench_idle and is_base_idle:
+        if self.reset_when_idle and is_base_idle:
+            rospy.loginfo("arm force not threshold: %f",0.1*np.linalg.norm(force))
+
             if not self.was_idle:
-                rospy.loginfo("Robot appears idle — resetting wrench.")
+                rospy.loginfo("Robot appears idle resetting wrench.")
                 self.was_idle = True
+            #self.bias_force = force
+            #self.bias_torque = torque
             self.filtered_force = np.zeros(3)
             self.filtered_torque = np.zeros(3)
         else:

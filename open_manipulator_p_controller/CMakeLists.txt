@@ -93,6 +93,11 @@ install(FILES 99-open-manipulator-cdc.rules
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
+install(PROGRAMS
+  scripts/admittance_controller.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 ################################################################################
 # Test
 ################################################################################
