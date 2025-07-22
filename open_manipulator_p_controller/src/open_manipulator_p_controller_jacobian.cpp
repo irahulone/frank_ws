@@ -38,6 +38,13 @@ OpenManipulatorController::OpenManipulatorController(std::string usb_port, std::
   ************************************************************/
   open_manipulator_.initOpenManipulator(using_platform_, usb_port, baud_rate, control_period_, with_gripper_);
 
+  // Assuming you have an instance like this:
+  cartesian_impedance_controller::CartesianImpedanceController impedance_controller_;
+
+  // After open_manipulator_ is initialized
+  impedance_controller_.setManipulator(&open_manipulator_);
+
+
   if (using_platform_ == true) log::info("Succeeded to init " + priv_node_handle_.getNamespace());
   else if (using_platform_ == false) log::info("Ready to simulate " + priv_node_handle_.getNamespace() + " on Gazebo");
 
