@@ -26,6 +26,20 @@ OpenManipulatorController::OpenManipulatorController(std::string usb_port, std::
   timer_thread_state_(false),
   with_gripper_(false)
 {
+
+  this->q_d << 0.0, -0.792, 0.397, 0.0, 0.393, 0.0;
+  this->tau_c_ = Eigen::VectorXd::Zero(6);
+  this->p_gain.resize(6);
+  this->p_gain << 1, 10, 3, 4, 5, 6;
+  this->scale_.resize(6);
+  this->scale_ << 1, 1, 1, 1, 1, 1;
+  // IDs of your motors
+  this->motor_ids = {1, 2, 3, 4, 5, 6};
+  // std::vector<int16_t> goal_currents = {300, 300, 300, 300, 10, 30};
+
+
+
+
   /************************************************************
   ** Initialize ROS parameters
   ************************************************************/
@@ -51,6 +65,7 @@ OpenManipulatorController::OpenManipulatorController(std::string usb_port, std::
   /************************************************************
   ** Initialize ROS publishers, subscribers and servers
   ************************************************************/
+  initdxl(usb_port, baud_rate);
   initPublisher();
   initSubscriber();
   initServer();
@@ -168,6 +183,8 @@ void OpenManipulatorController::initPublisher()
     }
   }
   task_wrench_pub_ = node_handle_.advertise<geometry_msgs::WrenchStamped>("task_wrench", 10);
+  torque_pub_ = node_handle_.advertise<std_msgs::Float64MultiArray>("calculated_torque", 10);
+
 
 }
 void OpenManipulatorController::initSubscriber()
@@ -540,7 +557,66 @@ void OpenManipulatorController::publishCallback(const ros::TimerEvent&)
 
   publishOpenManipulatorStates();
   publishKinematicsPose();
+  calcuTorque();
+  sendCommandsToMotors();
+
 }
+
+void OpenManipulatorController::calcuTorque()
+{
+  auto joints_name = open_manipulator_.getManipulator()->getAllActiveJointComponentName();
+  auto tool_name = open_manipulator_.getManipulator()->getAllToolComponentName();
+
+  auto joint_value = open_manipulator_.getAllActiveJointValue();
+  auto tool_value = open_manipulator_.getAllToolValue();
+
+  for (uint8_t i = 0; i < joints_name.size(); i ++)
+  {
+    this->q_c(i) = joint_value.at(i).position;
+  }
+
+
+  this->jacobian_ << open_manipulator_.getManipulator()->jacobian("gripper");;
+  Eigen::MatrixXd jacobian_transpose_pinv;
+
+  // pseudoInverse(this->jacobian_.transpose(), &jacobian_transpose_pinv);
+
+  // Eigen::VectorXd tau_task(this->n_joints_), tau_nullspace(this->n_joints_), tau_ext(this->n_joints_);
+
+  this->q_e = this->q_d - this->q_c;
+  // this->tau_ = this->q_e * this->p_gain;
+  this->tau_ = this->q_e .cwiseProduct(this->p_gain);
+
+
+  // Torque commanded to the joints of the robot is composed by the superposition of these three joint-torque signals:
+  Eigen::VectorXd tau_d = this->tau_;
+  saturateTorqueRate(tau_d, &this->tau_c_, this->delta_tau_max_);
+  std_msgs::Float64MultiArray msg;
+  msg.data.resize(this->tau_c_.size());
+  for (int i = 0; i < this->tau_c_.size(); ++i)
+  {
+    msg.data[i] = this->tau_c_(i);
+  }
+  torque_pub_.publish(msg);
+
+}
+
+void OpenManipulatorController::sendCommandsToMotors()
+{
+ for (size_t i = 0; i < motor_ids.size(); ++i)
+  {
+    uint8_t id = motor_ids[i];
+    int16_t goal_current = this->tau_c_(i);
+
+    // Apply Goal Current (e.g., 300 = ~0.81A)
+    if (!dxl_wb.itemWrite(id, "Goal_Current", goal_current, &log)) {
+      ROS_ERROR("ID %d - Failed to write Goal Current: %s", id, log);
+      continue;
+    }
+  }
+}
+
+
 
 void OpenManipulatorController::publishOpenManipulatorStates()
 {
