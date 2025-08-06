@@ -291,6 +291,20 @@ void OpenManipulator::processOpenManipulator(double present_time, bool using_act
   solveForwardKinematics();
 }
 
+void OpenManipulator::processOpenManipulatorTorqueOnly(const std::vector<uint8_t>& actuator_ids,
+                                                        const std::vector<int16_t>& goal_currents)
+{
+  // Send goal current (torque) commands to actuators
+  bool result = getManipulator()->writeGoalCurrentValue(actuator_ids, goal_currents);
+
+  if (!result)
+  {
+    log::error("Failed to write goal current values to actuators.");
+  }
+}
+
+
+
 JointWaypoint OpenManipulator::distanceToAngle(JointWaypoint distance)
 {
   // distance (m) -> angle (rad) 

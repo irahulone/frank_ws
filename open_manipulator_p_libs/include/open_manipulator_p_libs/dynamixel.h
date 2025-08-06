@@ -26,6 +26,7 @@
   #include <robotis_manipulator/robotis_manipulator.h>
   #include <dynamixel_workbench_toolbox/dynamixel_workbench.h>
 #endif
+#include "globals.h"
 
 namespace dynamixel
 {
@@ -143,6 +144,8 @@ public:
   bool writeProfileValue(std::vector<uint8_t> actuator_id, STRING profile_mode, uint32_t value);
   bool writeGoalProfilingControlValue(std::vector<uint8_t> actuator_id, std::vector<robotis_manipulator::ActuatorValue> value_vector);
   std::vector<robotis_manipulator::ActuatorValue> receiveAllDynamixelValue(std::vector<uint8_t> actuator_id);
+  bool writeGoalCurrentValue(std::vector<uint8_t> actuator_id, const std::vector<int16_t>& goal_currents);
+
 };
 
 class GripperDynamixel : public robotis_manipulator::ToolActuator

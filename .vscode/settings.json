@@ -24,6 +24,16 @@
         "variant": "cpp",
         "memory": "cpp",
         "algorithm": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "__split_buffer": "cpp",
+        "deque": "cpp",
+        "__hash_table": "cpp",
+        "__tree": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "map": "cpp",
+        "queue": "cpp",
+        "stack": "cpp",
+        "unordered_map": "cpp"
     }
 }

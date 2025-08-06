@@ -113,10 +113,65 @@ bool JointDynamixel::sendJointActuatorValue(std::vector<uint8_t> actuator_id, st
   return true;
 }
 
+bool JointDynamixel::sendJointActuatorValue(std::vector<uint8_t> actuator_id,
+                                            std::vector<robotis_manipulator::ActuatorValue> value_vector)
+{
+  bool result = false;
+
+  if (joint_dxl_mode_arg == "position_mode")  // You may define this as an enum or string
+  {
+    std::vector<double> radian_vector;
+    for (uint32_t index = 0; index < value_vector.size(); index++)
+    {
+      radian_vector.push_back(value_vector.at(index).position);
+    }
+    result = writeGoalPosition(actuator_id, radian_vector);
+  }
+  else if (joint_dxl_mode_arg == "current_mode") // choose one naming convention
+  {
+    std::vector<int16_t> current_vector;
+    for (uint32_t index = 0; index < value_vector.size(); index++)
+    {
+      // You may want to scale this if effort is in Nm and you need mA
+      current_vector.push_back(static_cast<int16_t>(value_vector.at(index).effort));
+    }
+    result = writeGoalCurrentValue(actuator_id, current_vector);
+  }
+  else
+  {
+    ROS_ERROR("Unsupported control mode: %s", joint_dxl_mode_arg.c_str());
+    return false;
+  }
+
+  return result;
+}
+
+
+
+
+
 std::vector<robotis_manipulator::ActuatorValue> JointDynamixel::receiveJointActuatorValue(std::vector<uint8_t> actuator_id)
 {
   return JointDynamixel::receiveAllDynamixelValue(actuator_id);
 }
+
+bool JointDynamixel::writeGoalCurrentValue(std::vector<uint8_t> actuator_id, const std::vector<int16_t>& goal_currents)
+{
+  bool result = true;
+  const char* log = nullptr;
+
+  for (size_t i = 0; i < actuator_id.size(); ++i)
+  {
+    if (!dynamixel_workbench_->writeRegister(actuator_id[i], "Goal_Current", goal_currents[i], &log))
+    {
+      result = false;
+      log::error(log);
+    }
+  }
+
+  return result;
+}
+
 
 
 /*****************************************************************************
@@ -287,29 +342,9 @@ bool JointDynamixel::writeGoalPosition(std::vector<uint8_t> actuator_id, std::ve
   return true;
 }
 
-bool JointDynamixel::writeGoalCurrentControlValue(std::vector<uint8_t> actuator_id, std::vector<robotis_manipulator::ActuatorValue> value_vector)
-{
-  bool result = true;
-  const char* log = NULL;
 
-  for (uint8_t index = 0; index < actuator_id.size(); index++)
-  {
-    uint8_t id = actuator_id.at(index);
-    int16_t goal_current = static_cast<int16_t>(value_vector.at(index).effort);  // Ensure type match
 
-    // Optional: Clamp current to valid range (e.g. -1193 to +1193 for some Dynamixel models)
-    if (goal_current > 1193) goal_current = 1193;
-    if (goal_current < -1193) goal_current = -1193;
 
-    if (!dynamixel_workbench_->itemWrite(id, "Goal_Current", goal_current, &log))
-    {
-      ROS_ERROR("ID %d - Failed to write Goal Current: %s", id, log);
-      result = false;
-    }
-  }
-
-  return result;
-}
 
 
 std::vector<robotis_manipulator::ActuatorValue> JointDynamixel::receiveAllDynamixelValue(std::vector<uint8_t> actuator_id)
@@ -477,6 +512,8 @@ bool JointDynamixelProfileControl::sendJointActuatorValue(std::vector<uint8_t> a
 
   return true;
 }
+
+
 
 std::vector<robotis_manipulator::ActuatorValue> JointDynamixelProfileControl::receiveJointActuatorValue(std::vector<uint8_t> actuator_id)
 {

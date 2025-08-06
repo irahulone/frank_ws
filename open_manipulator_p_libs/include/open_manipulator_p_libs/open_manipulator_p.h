@@ -22,6 +22,7 @@
 #include "dynamixel.h"
 #include "custom_trajectory.h"
 #include "kinematics.h"
+#include "globals.h"
 
 #define CUSTOM_TRAJECTORY_SIZE 4
 #define CUSTOM_TRAJECTORY_LINE    "custom_trajectory_line"
@@ -51,6 +52,7 @@ public:
 
   void initOpenManipulator(bool using_actual_robot_state, STRING usb_port = "/dev/ttyUSB0", STRING baud_rate = "1000000", float control_loop_time = 0.010, bool with_gripper = false);
   void processOpenManipulator(double present_time, bool using_actual_robot_state, bool with_gripper = false);
+  void processOpenManipulatorTorqueOnly(const std::vector<uint8_t>& actuator_ids, const std::vector<int16_t>& goal_currents);
   JointWaypoint distanceToAngle(JointWaypoint distance);
   JointWaypoint angleToDistance(JointWaypoint angle);
 };
