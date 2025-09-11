@@ -29,7 +29,7 @@ OpenManipulator::~OpenManipulator()
     delete custom_trajectory_[index];
 }
 
-void OpenManipulator::initOpenManipulator(bool using_actual_robot_state, STRING usb_port, STRING baud_rate, float control_loop_time, bool with_gripper)
+void OpenManipulator::initOpenManipulator(bool using_actual_robot_state, STRING usb_port, STRING baud_rate, float control_loop_time, bool with_gripper, std::string actuator_mode_)
 {
   /*****************************************************************************
   ** Initialize Manipulator Parameter
@@ -196,7 +196,7 @@ void OpenManipulator::initOpenManipulator(bool using_actual_robot_state, STRING 
     addJointActuator(JOINT_DYNAMIXEL, actuator_, jointDxlId, p_dxl_comm_arg);
 
     // Set joint actuator control mode
-    STRING joint_dxl_mode_arg = "position_mode";
+    STRING joint_dxl_mode_arg = actuator_mode_;
     void *p_joint_dxl_mode_arg = &joint_dxl_mode_arg;
     setJointActuatorMode(JOINT_DYNAMIXEL, jointDxlId, p_joint_dxl_mode_arg);
 
@@ -291,17 +291,54 @@ void OpenManipulator::processOpenManipulator(double present_time, bool using_act
   solveForwardKinematics();
 }
 
-void OpenManipulator::processOpenManipulatorTorqueOnly(const std::vector<uint8_t>& actuator_ids,
-                                                        const std::vector<int16_t>& goal_currents)
+void OpenManipulator::processOpenManipulatorTorqueOnly(const std::vector<int16_t>& goal_currents)
 {
+  // Control (motor)
+  receiveAllJointActuatorValue();
+  std::vector<JointValue> value_vector;
+  value_vector.reserve(goal_currents.size());
+
+  for (const double& raw_effort : goal_currents)
+  {
+    JointValue value;
+    value.position = 0.0;
+    value.velocity = 0.0;
+    value.acceleration = 0.0;
+    value.effort = raw_effort;
+
+    value_vector.push_back(value);
+  }
+
   // Send goal current (torque) commands to actuators
-  bool result = getManipulator()->writeGoalCurrentValue(actuator_ids, goal_currents);
+  bool result = sendAllJointActuatorValue(value_vector);
 
   if (!result)
   {
     log::error("Failed to write goal current values to actuators.");
   }
+  // Perception (fk)
+  solveForwardKinematics();
 }
+
+std::vector<JointValue> convertEffortToJointValue(const std::vector<int16_t>& effort_vector, double torque_coefficient)
+{
+  std::vector<JointValue> value_vector;
+  value_vector.reserve(effort_vector.size());
+
+  for (const double& raw_effort : effort_vector)
+  {
+    JointValue value;
+    value.position = 0.0;
+    value.velocity = 0.0;
+    value.acceleration = 0.0;
+    value.effort = raw_effort / torque_coefficient;
+
+    value_vector.push_back(value);
+  }
+
+  return value_vector;
+}
+
 
 
 

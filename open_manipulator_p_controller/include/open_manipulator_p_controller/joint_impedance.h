@@ -1,0 +1,71 @@
+<launch>
+  <!-- ===== Args you may tweak ===== -->
+  <!-- Set to true if you want to drive joints from a GUI for testing.
+       Leave false when your hardware already publishes /joint_states. -->
+  <arg name="use_fake_js" default="false"/>
+
+  <!-- URDF/Xacro path -->
+  <arg name="urdf_xacro" default="$(find open_manipulator_p_description)/urdf/open_manipulator_p_robot.urdf.xacro"/>
+
+  <!-- KDL chain endpoints (confirm against your URDF) -->
+  <arg name="base_link" default="link1"/>
+  <arg name="tip_link"  default="end_link"/>
+
+  <!-- Gravity (expressed in base_link frame) -->
+  <arg name="gx" default="0.0"/>
+  <arg name="gy" default="0.0"/>
+  <arg name="gz" default="-9.81"/>
+
+  <!-- Optional one-shot CLI: comma-separated radians in chain order.
+       Leave empty to run in live mode (reads /joint_states). -->
+  <arg name="q" default=""/>
+
+  <!-- ===== Load URDF to /robot_description ===== -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro $(arg urdf_xacro)"/>
+
+  <!-- Robot State Publisher -->
+  <node name="robot_state_publisher" pkg="robot_state_publisher"
+        type="robot_state_publisher" output="screen"/>
+
+  <!-- Optional fake /joint_states for testing without hardware -->
+  <group if="$(arg use_fake_js)">
+    <node name="joint_state_publisher" pkg="joint_state_publisher"
+          type="joint_state_publisher" output="screen"/>
+  </group>
+
+  <!-- ===== joint Impedance controller node ===== -->
+  <node name="joint_impedance"
+        pkg="open_manipulator_p_controller"
+        type="joint_impedance"   
+        output="screen">
+
+    <!-- URDF & chain -->
+    <param name="urdf_param" value="/robot_description"/>
+    <param name="base_link"  value="$(arg base_link)"/>
+    <param name="tip_link"   value="$(arg tip_link)"/>
+    <param name="gx" value="$(arg gx)"/>
+    <param name="gy" value="$(arg gy)"/>
+    <param name="gz" value="$(arg gz)"/>
+    <param name="q"  value="$(arg q)"/>
+
+    <!-- Enable/scale -->
+    <param name="enable" value="true"/>
+    <param name="scale"  value="1.0"/>
+
+    <!-- Topics -->
+    <param name="current_topic" value="goal_currents_ticks"/>
+    <param name="torque_topic"  value="impedance_torque"/>
+
+    <!-- ===== Impedance gains ===== -->
+    <!-- Translational stiffness [N/m] -->
+    <param name="K_xyz" value="[1500, 1500, 1500]"/>
+    <!-- Translational damping [N·s/m] -->
+    <param name="D_xyz" value="[60, 60, 60]"/>
+    <!-- Rotational stiffness [N·m/rad] -->
+    <param name="K_rot" value="[10, 10, 10]"/>
+    <!-- Rotational damping [N·m·s/rad] -->
+    <param name="D_rot" value="[0.5, 0.5, 0.5]"/>
+
+  </node>
+</launch>

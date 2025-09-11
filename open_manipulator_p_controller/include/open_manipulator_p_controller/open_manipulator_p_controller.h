@@ -21,6 +21,10 @@
 
 #include <boost/thread.hpp>
 #include <unistd.h>
+#include <vector>
+#include <cstdint>
+#include <algorithm>
+#include <cmath>
 
 #include <geometry_msgs/PoseStamped.h>
 #include <ros/ros.h>
@@ -71,6 +75,8 @@ class OpenManipulatorController
   bool using_platform_;
   double control_period_;
   bool with_gripper_;
+  std::string actuator_mode_;
+
 
   /*****************************************************************************
   ** Variables
@@ -98,6 +104,7 @@ class OpenManipulatorController
   ros::Publisher open_manipulator_joint_states_pub_;
   std::vector<ros::Publisher> gazebo_goal_joint_position_pub_;
   ros::Publisher torque_pub_;
+  ros::Publisher goal_current_pub_;
 
 
   void publishOpenManipulatorStates();
@@ -200,7 +207,10 @@ class OpenManipulatorController
     }
   }
 
-  void sendCommandsToMotors();
+  std::vector<int16_t> torqueToGoalCurrents(const Eigen::VectorXd& tau) const;
+
+  std::vector<int16_t> goal_currents_;
+
 
  protected:
   
@@ -223,3 +233,4 @@ class OpenManipulatorController
 };
 }
 #endif //OPEN_MANIPULATOR_P_CONTROLLER_H_
+

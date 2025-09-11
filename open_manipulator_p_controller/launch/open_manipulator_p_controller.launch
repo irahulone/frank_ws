@@ -4,12 +4,16 @@
   <arg name="control_period"         default="0.010"/>
   <arg name="use_platform"           default="true"/>
   <arg name="with_gripper"           default="false"/>
+  <arg name="actuator_mode"           default="position_mode"/>
 
   <node name="open_manipulator_p_controller" pkg="open_manipulator_p_controller" type="open_manipulator_p_controller"
      output="screen" args="$(arg usb_port) $(arg baud_rate)">
     <param name="using_platform"       value="$(arg use_platform)"/>
     <param name="control_period"       value="$(arg control_period)"/>
     <param name="with_gripper"         value="$(arg with_gripper)"/>
+    <param name="actuator_mode"         value="$(arg actuator_mode)"/>
+
   </node>
+
 
 </launch>

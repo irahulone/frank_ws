@@ -26,34 +26,38 @@ OpenManipulatorController::OpenManipulatorController(std::string usb_port, std::
   timer_thread_state_(false),
   with_gripper_(false)
 {
+  std::vector<int16_t> goal_currents = {150, 150, 150, 150, 150, 150};
 
-//  this->q_d << 0.0, -0.792, 0.397, 0.0, 0.393, 0.0;
-  this->q_d << 0.0, -1.618, 0.393, 0.002, 0.393, 0.0;
+  this->q_d << 0.0, -0.792, 0.397, 0.0, 0.393, 0.0;
+  this->q_d << 0.0, -1.618, 0.393, 0.002, 0.476, 114.272;
 
   this->tau_c_ = Eigen::VectorXd::Zero(6);
   this->p_gain.resize(6);
-  this->p_gain << 1, 10, 3, 4, 50, 100;
+  this->p_gain << 1, 10, 3, 4, 5, 6;
   this->scale_.resize(6);
   this->scale_ << 1, 1, 1, 1, 1, 1;
   // IDs of your motors
   this->motor_ids = {1, 2, 3, 4, 5, 6};
-  this->goal_currents_ = {0, 0, 0, 0, 0, 150};
-  this->last_goal_current_ticks_ = {0, 0, 0, 0, 0, 0};
+  // std::vector<int16_t> goal_currents = {300, 300, 300, 300, 10, 30};
 
+  // ROS_INFO_STREAM("WE HERE");
   /************************************************************
   ** Initialize ROS parameters
   ************************************************************/
   control_period_       = priv_node_handle_.param<double>("control_period", 0.010f);
-  using_platform_       = priv_node_handle_.param<bool>("using_platform", true);
+  using_platform_       = priv_node_handle_.param<bool>("using_platform", false);
   with_gripper_         = priv_node_handle_.param<bool>("with_gripper", false);
-  actuator_mode_        = priv_node_handle_.param<std::string>("actuator_mode", "position_mode");
-  std::string currents_in;
-  priv_node_handle_.param<std::string>("goal_currents_ticks_in", currents_in, "goal_currents_ticks_in");
-
+  actuator_mode_        = priv_node_handle_.param<std::string>("actuator_mode", false);
   /************************************************************
   ** Initialize variables
   ************************************************************/
   open_manipulator_.initOpenManipulator(using_platform_, usb_port, baud_rate, control_period_, with_gripper_, actuator_mode_);
+
+  // Assuming you have an instance like this:
+  cartesian_impedance_controller::CartesianImpedanceController impedance_controller_;
+
+  // After open_manipulator_ is initialized
+  impedance_controller_.setManipulator(&open_manipulator_);
 
 
   if (using_platform_ == true) log::info("Succeeded to init " + priv_node_handle_.getNamespace());
@@ -62,12 +66,10 @@ OpenManipulatorController::OpenManipulatorController(std::string usb_port, std::
   /************************************************************
   ** Initialize ROS publishers, subscribers and servers
   ************************************************************/
-  //initdxl(usb_port, baud_rate);
+  initdxl(usb_port, baud_rate);
   initPublisher();
   initSubscriber();
   initServer();
-//  ROS_INFO_STREAM("WE HERE");
-
 }
 
 OpenManipulatorController::~OpenManipulatorController()
@@ -151,33 +153,6 @@ void *OpenManipulatorController::timerThread(void *param)
 /********************************************************************************
 ** Init Functions
 ********************************************************************************/
-
-void OpenManipulatorController::initdxl(std::string usb_port, std::string baud_rate)
-{
-  int baud_rates = 1000000;
-
-  // Initialize DYNAMIXEL
-  if (!this->dxl_wb.init(usb_port.c_str(), baud_rates)) {
-    ROS_ERROR("Failed to initialize port");
-    return;
-  }
-  for (size_t i = 0; i < motor_ids.size(); ++i)
-  {
-    uint8_t id = motor_ids[i];
-    uint16_t model_number;
-    const char* model_name;
-    if (!this->dxl_wb.ping(id, &model_number, &model_name)) {
-      ROS_WARN("Failed to ping motor ID %d", id);
-      continue;
-    }
-    ROS_INFO("Connected to motor ID %d: Model %s (%d)", id, model_name, model_number);
-      // Enable Torque
-    if (!dxl_wb.itemWrite(id, "Torque_Enable", 1, &log)) {
-      ROS_ERROR("ID %d - Failed to enable torque: %s", id, log);
-      continue;
-    }
-  }
-}
 void OpenManipulatorController::initPublisher()
 {
   // ros message publisher
@@ -210,25 +185,14 @@ void OpenManipulatorController::initPublisher()
   }
   task_wrench_pub_ = node_handle_.advertise<geometry_msgs::WrenchStamped>("task_wrench", 10);
   torque_pub_ = node_handle_.advertise<std_msgs::Float64MultiArray>("calculated_torque", 10);
-  goial_current_pub_ = node_handle_.advertise<std_msgs::Int16MultiArray>("goal_currents_ticks", 10);
+  goal_current_pub_ = node_handle_.advertise<std_msgs::Int16MultiArray>("goal_currents_ticks", 10);
+
 
 }
 void OpenManipulatorController::initSubscriber()
 {
   // ros message subscriber
   open_manipulator_option_sub_ = node_handle_.subscribe("option", 10, &OpenManipulatorController::openManipulatorOptionCallback, this);
-  curr_sub_ = node_handle_.subscribe<std_msgs::Int16MultiArray>(
-    "goal_currents_ticks", 10, &GravityProbe::currentsCb, this);
-
-}
-void OpenManipulatorController::gravityCurrentsCb(const std_msgs::Int16MultiArray::ConstPtr& msg) {
-  const size_t N = 6; // your DOF
-  if (msg->data.size() != N) {
-    ROS_WARN_THROTTLE(1.0, "goal_currents_ticks size %zu != DOF %zu", msg->data.size(), N);
-    return;
-  }
-  last_goal_current_ticks_.assign(msg->data.begin(), msg->data.end());
-  ROS_INFO_STREAM_THROTTLE(1.0, "received current ticks ok");
 }
 
 void OpenManipulatorController::initServer()
@@ -582,14 +546,8 @@ bool OpenManipulatorController::goalDrawingTrajectoryCallback(open_manipulator_m
 ********************************************************************************/
 void OpenManipulatorController::process(double time)
 {
-
-//  open_manipulator_.processOpenManipulator(time, using_platform_, with_gripper_);
-//  this->goal_currents_ = {0, 0, 0, 0, 0, 500};
-//this->goal_currents_ = last_goal_current_ticks_;
-//  ROS_INFO_STREAM("WE HERE 2 " << this->goal_currents_[0]);
+  // open_manipulator_.processOpenManipulator(time, using_platform_, with_gripper_);
   open_manipulator_.processOpenManipulatorTorqueOnly(this->goal_currents_);
-//  ROS_INFO_STREAM("WE HERE 3");
-
 }
 
 /********************************************************************************
@@ -602,8 +560,8 @@ void OpenManipulatorController::publishCallback(const ros::TimerEvent&)
 
   publishOpenManipulatorStates();
   publishKinematicsPose();
-  publishTaskWrench();
   calcuTorque();
+
 }
 
 std::vector<int16_t> OpenManipulatorController::torqueToGoalCurrents(const Eigen::VectorXd& tau) const
@@ -613,22 +571,22 @@ std::vector<int16_t> OpenManipulatorController::torqueToGoalCurrents(const Eigen
   constexpr double GEAR          = 1.0;    
   constexpr double ETA           = 1.0;    
   constexpr double AMPS_PER_TICK = 1.0;    
-  constexpr int16_t TICK_LIMIT   = 130;  
+  constexpr int16_t TICK_LIMIT   = 200;  
 
   std::vector<int16_t> v;
   v.reserve(tau.size());
- // ROS_INFO_STREAM("WE HRERE");
+
   for (int i = 0; i < tau.size(); ++i) {
     double i_cmd = tau[i] / (Kt_Nm_per_A * GEAR * ETA);
     long ticks   = std::lround(i_cmd / AMPS_PER_TICK);
     ticks = std::max<long>(-TICK_LIMIT, std::min<long>(TICK_LIMIT, ticks));
     v.push_back(static_cast<int16_t>(ticks));
   }
- // ROS_INFO_STREAM("WE HERE ERE");
   return v;
 }
 
-Eigen::VectorXd OpenManipulatorController::calcuTorque()
+
+void OpenManipulatorController::calcuTorque()
 {
   auto joints_name = open_manipulator_.getManipulator()->getAllActiveJointComponentName();
   auto tool_name = open_manipulator_.getManipulator()->getAllToolComponentName();
@@ -642,21 +600,24 @@ Eigen::VectorXd OpenManipulatorController::calcuTorque()
   }
 
 
-  this->jacobian_ = open_manipulator_.jacobian("gripper");
+  this->jacobian_ << open_manipulator_.getManipulator()->jacobian("gripper");;
   Eigen::MatrixXd jacobian_transpose_pinv;
 
-//  pseudoInverse(this->jacobian_.transpose(), &jacobian_transpose_pinv);
+  // pseudoInverse(this->jacobian_.transpose(), &jacobian_transpose_pinv);
 
-//  Eigen::VectorXd tau_task(this->n_joints_), tau_nullspace(this->n_joints_), tau_ext(this->n_joints_);
+  // Eigen::VectorXd tau_task(this->n_joints_), tau_nullspace(this->n_joints_), tau_ext(this->n_joints_);
   this->q_c(5) = std::remainder(this->q_c(5), 2.0 * M_PI);
+
   this->q_e = this->q_d - this->q_c;
-  this->tau_ = this->q_e.cwiseProduct(this->p_gain);
-  // ROS_INFO_STREAM("current error" << this->q_e(5));
+  // this->tau_ = this->q_e * this->p_gain;
+  this->tau_ = this->q_e .cwiseProduct(this->p_gain);
+
+
   // Torque commanded to the joints of the robot is composed by the superposition of these three joint-torque signals:
   Eigen::VectorXd tau_d = this->tau_;
   saturateTorqueRate(tau_d, &this->tau_c_, this->delta_tau_max_);
+
   goal_currents_ = torqueToGoalCurrents(this->tau_c_);
-  goal_currents_ = last_goal_current_ticks_;
 
   std_msgs::Float64MultiArray msg;
   msg.data.resize(this->tau_c_.size());
@@ -666,16 +627,12 @@ Eigen::VectorXd OpenManipulatorController::calcuTorque()
   }
   torque_pub_.publish(msg);
 
-  std_msgs::Int16MultiArray msg1;
-  msg1.data.resize(goal_currents_.size());
-//  ROS_INFO_STREAM("WE HRERE");
-
+  std_msgs::Int16MultiArray msg;
+  msg.data.resize(goal_currents_.size());
   for (int i = 0; i < goal_currents_.size(); ++i) {
-    msg1.data[i] = goal_currents_[i];
+    msg.data[i] = static_cast<int16_t>(goal_currents_(i));
   }
-  goal_current_pub_.publish(msg1);
-  
-  return this->tau_c_;
+  goal_current_pub_.publish(msg);
 }
 
 void OpenManipulatorController::publishOpenManipulatorStates()
@@ -706,11 +663,10 @@ void OpenManipulatorController::publishTaskWrench()
     tau(i) = joint_value.at(i).effort;
 
   // 2. Get Jacobian (this assumes your class has the method like this)
-  Eigen::MatrixXd J = open_manipulator_.jacobian("joint1");
+  Eigen::MatrixXd J = open_manipulator_.getManipulator()->jacobian("gripper");
   
   // 3. Compute wrench = J^T * tau
-//  Eigen::VectorXd wrench = J.transpose() * tau;
-  Eigen::VectorXd wrench = (J.transpose()).completeOrthogonalDecomposition().pseudoInverse() * tau;
+  Eigen::VectorXd wrench = J.transpose() * tau;
 
   // 4. Fill and publish geometry_msgs::WrenchStamped
   geometry_msgs::WrenchStamped wrench_msg;
@@ -725,10 +681,9 @@ void OpenManipulatorController::publishTaskWrench()
   wrench_msg.wrench.torque.y = wrench(4);
   wrench_msg.wrench.torque.z = wrench(5);
 
-  //ROS_INFO_STREAM("ee force:"<< wrench_msg);
-
   task_wrench_pub_.publish(wrench_msg);
 }
+
 
 void OpenManipulatorController::publishKinematicsPose()
 {
