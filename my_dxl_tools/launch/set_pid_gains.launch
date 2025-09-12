@@ -1,0 +1,7 @@
+<launch>
+  <!-- Load the YAML config file path as a ROS param -->
+  <param name="yaml_path" value="$(find my_dxl_tools)/config/pid_gains.yaml" />
+
+  <!-- Run the PID setting executable -->
+  <node name="set_pid_gains_yaml" pkg="my_dxl_tools" type="set_pid_gains_yaml" output="screen" />
+</launch>
