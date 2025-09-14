@@ -35,5 +35,6 @@
         "queue": "cpp",
         "stack": "cpp",
         "unordered_map": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/Users/kangwang/Documents/GitHub/Untitled/frank_ws/open_manipulator_p_controller"
 }

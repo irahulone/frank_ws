@@ -22,6 +22,9 @@ find_package(catkin REQUIRED
     cmake_modules
 )
 find_package(Boost REQUIRED)
+find_package(orocos_kdl REQUIRED)
+find_package(kdl_parser REQUIRED)
+
 
 ################################################################################
 # Setup for python modules and scripts
@@ -61,10 +64,27 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
 )
+set(CMAKE_BUILD_TYPE Debug)
 
-add_executable(open_manipulator_p_controller src/open_manipulator_p_controller.cpp)
+add_executable(open_manipulator_p_controller 
+	src/open_manipulator_p_controller.cpp
+	)
+add_executable(om_torque_controller.cpp 
+src/om_torque_controller.cpp
+)
+add_executable(gravity_cancellation src/gravity_cancellation.cpp)
+add_executable(cartesian_impedance src/cartesian_impedance.cpp)
+add_executable(joint_impedance src/joint_impedance.cpp)
+
 add_dependencies(open_manipulator_p_controller ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(open_manipulator_p_controller ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(om_torque_controller ${catkin_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(cartesian_impedance ${catkin_LIBRARIES}  ${kdl_parser_LIBRARIES})
+target_link_libraries(joint_impedance ${catkin_LIBRARIES}  ${kdl_parser_LIBRARIES})
+target_link_libraries(gravity_cancellation
+  ${orocos_kdl_LIBRARIES}
+  ${kdl_parser_LIBRARIES}
+)
 
 ################################################################################
 # Install
@@ -88,6 +108,16 @@ install(DIRECTORY launch
 
 install(FILES 99-open-manipulator-cdc.rules
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(PROGRAMS
+  scripts/effort_filter.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(PROGRAMS
+  scripts/admittance_controller.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 ################################################################################

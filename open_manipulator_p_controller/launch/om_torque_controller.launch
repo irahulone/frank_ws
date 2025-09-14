@@ -1,4 +1,4 @@
-﻿<launch>
+<launch>
   <arg name="usb_port"     default="/dev/ttyUSB0"/>
   <arg name="baud_rate"    default="1000000"/>
   <arg name="control_period"         default="0.010"/>
@@ -15,4 +15,8 @@
     <remap from="~goal_currents_ticks_in" to="/gravity_cancellation/goal_currents_ticks"/>
 
   </node>
+
 </launch>
+
+
+
